@@ -145,11 +145,8 @@ class SalesPredictor:
             # Create feature row for target date
             feature_row = {'SKU': sku, 'Date': target_dt}
 
-            # Time-based features
-            feature_row['year'] = target_dt.year
-            feature_row['month'] = target_dt.month
-            feature_row['quarter'] = target_dt.quarter
-            feature_row['week_of_year'] = target_dt.isocalendar()[1]
+            # PO_Quantity for target month (set to 0 as we don't know it yet)
+            feature_row['PO_Quantity'] = 0
 
             # Lag features (1, 2, 3 months)
             lag_periods = self.config['features']['lag_periods']
@@ -162,13 +159,13 @@ class SalesPredictor:
                     feature_row[f'sales_lag_{lag}'] = 0
                     feature_row[f'po_quantity_lag_{lag}'] = 0
 
-            # Rolling features (3-month average)
+            # Rolling features (3-month average) - use exact names from training
             if len(recent_data) >= 3:
-                feature_row['sales_rolling_mean'] = recent_data['Sales'].mean()
-                feature_row['po_rolling_mean'] = recent_data['PO_Quantity'].mean()
+                feature_row['sales_rolling_mean_3'] = recent_data['Sales'].mean()
+                feature_row['po_quantity_rolling_mean_3'] = recent_data['PO_Quantity'].mean()
             else:
-                feature_row['sales_rolling_mean'] = recent_data['Sales'].mean()
-                feature_row['po_rolling_mean'] = recent_data['PO_Quantity'].mean()
+                feature_row['sales_rolling_mean_3'] = recent_data['Sales'].mean()
+                feature_row['po_quantity_rolling_mean_3'] = recent_data['PO_Quantity'].mean()
 
             # Categorical features (copy from most recent record)
             latest_record = recent_data.iloc[-1]
@@ -221,14 +218,34 @@ class SalesPredictor:
         feature_cols = [col for col in features_df.columns
                        if col not in exclude_cols]
 
-        X = features_df[feature_cols]
+        X = features_df[feature_cols].copy()
+
+        # Ensure features match trained models exactly
+        lgbm_expected_features = self.models['lightgbm'].feature_name_
+        xgb_expected_features = [str(f) for f in self.models['xgboost'].feature_names_in_]
+
+        # XGBoost uses the original feature names (no conversion needed)
+        X_xgb = X[xgb_expected_features]
+
+        # LightGBM uses all underscores - convert column names
+        def standardize_to_lgbm_format(col_name):
+            """Convert to LightGBM format (all underscores)"""
+            # Brand Code_XXX → Brand_Code_XXX
+            col_name = col_name.replace('Brand Code_', 'Brand_Code_')
+            # Status_New Pending → Status_New_Pending (all spaces to underscores)
+            col_name = col_name.replace(' ', '_')
+            return col_name
+
+        X_lgbm = X.copy()
+        X_lgbm.columns = [standardize_to_lgbm_format(col) for col in X_lgbm.columns]
+        X_lgbm = X_lgbm[lgbm_expected_features]
 
         if model_type == 'ensemble':
             # Ensemble prediction
             weights = self.config['ensemble']['weights']
 
-            lgbm_pred = self.models['lightgbm'].predict(X)
-            xgb_pred = self.models['xgboost'].predict(X)
+            lgbm_pred = self.models['lightgbm'].predict(X_lgbm)
+            xgb_pred = self.models['xgboost'].predict(X_xgb)
 
             predictions = (
                 weights['lightgbm'] * lgbm_pred +
@@ -236,10 +253,10 @@ class SalesPredictor:
             )
 
         elif model_type == 'lightgbm':
-            predictions = self.models['lightgbm'].predict(X)
+            predictions = self.models['lightgbm'].predict(X_lgbm)
 
         elif model_type == 'xgboost':
-            predictions = self.models['xgboost'].predict(X)
+            predictions = self.models['xgboost'].predict(X_xgb)
 
         else:
             raise ValueError(f"Unknown model_type: {model_type}")
