@@ -365,6 +365,168 @@ class SalesPredictor:
 
         self.logger.info(f"💾 Predictions saved to: {output_path}")
 
+    def predict_with_strategy(
+        self,
+        features_df: pd.DataFrame,
+        abc_classification: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Predict with ABC-based strategy
+
+        Args:
+            features_df: Features DataFrame
+            abc_classification: ABC classification DataFrame with columns [SKU, ABC, avg_sales]
+
+        Returns:
+            DataFrame with columns:
+            - SKU
+            - ABC_Category
+            - Avg_Sales_6M
+            - Predicted_Sales
+            - Order_Qty
+            - Recommendation (AUTO / MANUAL / MANUAL_REVIEW)
+            - Confidence_Score
+            - Anomaly_Score
+            - Notes
+        """
+        self.logger.info("🎯 Predicting with ABC strategy...")
+
+        # Get ABC strategy config
+        strategy_config = self.config.get('prediction', {}).get('abc_strategy', {})
+
+        # Merge ABC classification
+        features_with_abc = features_df.merge(
+            abc_classification[['SKU', 'ABC', 'avg_sales']],
+            on='SKU',
+            how='left'
+        )
+
+        # Generate base predictions
+        predictions = self.predict(features_df, model_type='ensemble')
+
+        results = []
+
+        for idx, row in features_with_abc.iterrows():
+            sku = row['SKU']
+            abc_cat = row.get('ABC', 'UNKNOWN')
+            avg_sales_6m = row.get('avg_sales', 0)
+            pred = predictions[idx]
+
+            # Detect anomalies
+            anomaly_score = self._detect_anomaly(row)
+
+            # Determine recommendation
+            if abc_cat == 'A':
+                recommendation = "MANUAL"
+                confidence = 0.0
+                order_qty = None
+                notes = "High-volume A-Item: Manual forecasting required"
+
+            elif abc_cat in ['B', 'C']:
+                # Check for anomalies
+                if anomaly_score > 0.7:
+                    recommendation = "MANUAL_REVIEW"
+                    confidence = 0.5
+                    notes = f"⚠️ Anomaly detected (score: {anomaly_score:.2f}), review recommended"
+                else:
+                    recommendation = "AUTO"
+                    confidence = 0.9 if abc_cat == 'B' else 0.7
+                    notes = f"Reliable {abc_cat}-Item prediction"
+
+                # Calculate order quantity
+                if abc_cat == 'C':
+                    # Conservative for C-Items
+                    c_multiplier = strategy_config.get('c_item_multiplier', 1.2)
+                    c_min_order = strategy_config.get('c_item_min_order', 5)
+                    order_qty = max(pred * c_multiplier, c_min_order)
+                else:
+                    # Standard for B-Items
+                    order_multiplier = self.config['business']['order_multiplier']
+                    order_qty = pred * order_multiplier
+
+            else:
+                # Unknown ABC
+                recommendation = "MANUAL"
+                confidence = 0.0
+                order_qty = None
+                notes = "Unknown ABC category"
+
+            results.append({
+                'SKU': sku,
+                'ABC_Category': abc_cat,
+                'Avg_Sales_6M': avg_sales_6m,
+                'Predicted_Sales': pred if recommendation != 'MANUAL' else None,
+                'Order_Qty': order_qty,
+                'Recommendation': recommendation,
+                'Confidence_Score': confidence,
+                'Anomaly_Score': anomaly_score,
+                'Notes': notes
+            })
+
+        results_df = pd.DataFrame(results)
+
+        # Log summary
+        rec_counts = results_df['Recommendation'].value_counts()
+        self.logger.info(f"   ✅ Prediction strategy applied:")
+        self.logger.info(f"      AUTO: {rec_counts.get('AUTO', 0)} SKUs")
+        self.logger.info(f"      MANUAL_REVIEW: {rec_counts.get('MANUAL_REVIEW', 0)} SKUs")
+        self.logger.info(f"      MANUAL: {rec_counts.get('MANUAL', 0)} SKUs")
+
+        return results_df
+
+    def _detect_anomaly(self, features: pd.Series) -> float:
+        """
+        Detect anomaly score (0~1)
+
+        Args:
+            features: Feature row
+
+        Returns:
+            Anomaly score (0 = normal, 1 = highly anomalous)
+        """
+        score = 0.0
+
+        # Get anomaly detection config
+        anomaly_config = self.config.get('prediction', {}).get(
+            'abc_strategy', {}
+        ).get('anomaly_detection', {})
+
+        if not anomaly_config.get('enabled', True):
+            return 0.0
+
+        # 1. PO spike
+        if 'PO_Quantity' in features.index:
+            po_current = features.get('PO_Quantity', 0)
+            po_avg = features.get('po_rolling_mean_3', po_current)
+
+            if po_avg > 0:
+                po_spike_ratio = po_current / po_avg
+                po_threshold = anomaly_config.get('po_spike_threshold', 3.0)
+
+                if po_spike_ratio > po_threshold:
+                    spike_score = min((po_spike_ratio - po_threshold) / po_threshold, 1.0) * 0.5
+                    score += spike_score
+
+        # 2. Sales volatility
+        if 'sales_lag_1' in features.index:
+            sales_recent = features.get('sales_lag_1', 0)
+            sales_avg = features.get('sales_rolling_mean_3', sales_recent)
+
+            if sales_avg > 0:
+                sales_change = abs(sales_recent - sales_avg) / sales_avg
+                change_threshold = anomaly_config.get('sales_change_threshold', 0.5)
+
+                if sales_change > change_threshold:
+                    volatility_score = min(sales_change / change_threshold - 1, 1.0) * 0.3
+                    score += volatility_score
+
+        # 3. On Sale status
+        if features.get('Status_On_Sale', 0) == 1:
+            on_sale_weight = anomaly_config.get('on_sale_weight', 0.2)
+            score += on_sale_weight
+
+        return min(score, 1.0)
+
 
 # ============================================================================
 # Main Entry Point

@@ -99,6 +99,26 @@ prediction:
   # Output decimal places
   decimal_places: 2
 
+  # ABC Strategy (B+C automation, A manual)
+  abc_strategy:
+    enabled: true
+
+    # Category rules
+    a_items: "MANUAL"           # High-volume items: Manual forecasting
+    b_items: "AUTO"              # Medium-volume: Automated prediction
+    c_items: "AUTO"              # Low-volume: Automated prediction
+
+    # Anomaly detection thresholds
+    anomaly_detection:
+      enabled: true
+      po_spike_threshold: 3.0    # Flag if PO is 3x+ average
+      sales_change_threshold: 0.5 # Flag if sales change >50%
+      on_sale_weight: 0.2        # Weight for On Sale status
+
+    # Conservative adjustments for C-Items
+    c_item_multiplier: 1.2       # Order = Prediction × 1.2 (not 2.0)
+    c_item_min_order: 5          # Minimum order quantity
+
 # Logging
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
