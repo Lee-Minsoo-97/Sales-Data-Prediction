@@ -1,0 +1,117 @@
+# iHerb Sales Prediction System Configuration
+
+# Project Paths
+paths:
+  data_raw_sales: "data/raw_sales"
+  data_raw_po: "data/raw_po"
+  data_processed: "data/processed"
+  models_trained: "models/trained"
+  logs: "logs"
+  predictions: "predictions"
+
+# Data Processing
+data:
+  # Train/Test Split
+  test_start_date: "2025-07-01"
+  val_start_date: "2025-06-01"
+
+  # PO Data
+  po_file_name: "sps_data.csv"
+
+  # Sales Data Pattern
+  sales_file_pattern: "*_BBG.csv"
+
+# Feature Engineering
+features:
+  # Lag Features
+  lag_periods: [1, 2, 3]
+
+  # Rolling Window Features
+  rolling_window: 3
+
+  # Columns to exclude from training
+  exclude_columns:
+    - "SKU"
+    - "UPC Code"
+    - "Product Description"
+    - "Date"
+    - "Sales"  # Target variable
+
+# Model Configuration
+model:
+  # Random Seed
+  random_state: 42
+
+  # Hyperparameter Tuning
+  optuna:
+    n_trials: 100
+    cv_splits: 5
+    timeout: null  # seconds, null for no timeout
+
+  # Training
+  early_stopping_rounds: 50
+  verbose: 100
+
+  # LightGBM Default Parameters
+  lightgbm:
+    objective: "regression"
+    metric: "mae"
+    boosting_type: "gbdt"
+    n_jobs: -1
+
+  # XGBoost Default Parameters
+  xgboost:
+    objective: "reg:absoluteerror"
+    eval_metric: "mae"
+    tree_method: "hist"
+    device: "cpu"  # Change to "cuda" if GPU available
+    n_jobs: -1
+
+# Ensemble Configuration
+ensemble:
+  # Weights based on CV MAE (inverse)
+  # LGBM CV MAE: 28.67 -> weight = 1/28.67 = 0.0349
+  # XGB CV MAE: 27.03 -> weight = 1/27.03 = 0.0370
+  # Normalized: LGBM = 0.485, XGB = 0.515
+  weights:
+    lightgbm: 0.485
+    xgboost: 0.515
+
+# Business Rules
+business:
+  # Order Quantity Multiplier
+  order_multiplier: 2.0
+
+  # ABC Classification Thresholds (based on sales volume)
+  abc_thresholds:
+    A: 0.80  # Top 80% cumulative sales
+    B: 0.95  # Next 15% (80-95%)
+    # C: Remaining (95-100%)
+
+# Prediction
+prediction:
+  # Minimum required historical months
+  min_history_months: 3
+
+  # Missing value placeholder
+  na_placeholder: "#N/A"
+
+  # Output decimal places
+  decimal_places: 2
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/pipeline.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Monitoring
+monitoring:
+  # Performance tracking
+  performance_log: "logs/performance_tracking.csv"
+
+  # Alert thresholds
+  alert_mae_increase: 0.20  # Alert if MAE increases by 20%
+  alert_bias_threshold: 50  # Alert if absolute bias > 50
