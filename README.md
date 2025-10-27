@@ -175,163 +175,57 @@ models/trained/xgb_model_v2_0.pkl
 
 ## 🚀 사용 방법
 
-### **방법 1: CLI (커맨드라인) - 가장 빠름**
-
-#### **자동 모드 (다음 달 예측):**
+### **방법 1: CLI (가장 빠름)**
 
 ```bash
+# 자동 모드 (다음 달 예측)
 python generate_forecast.py --auto
-```
 
-#### **인터랙티브 모드 (날짜 선택):**
-
-```bash
+# 인터랙티브 모드 (날짜 선택)
 python generate_forecast.py
-```
 
-대화형으로 날짜 입력:
-```
-예측 대상 월을 입력하세요 (YYYY-MM-DD 형식, 예: 2025-09-01):
-기본값 [2025-11-01]: 2025-12-01  ← 원하는 날짜 입력
-```
-
-#### **특정 날짜 직접 지정:**
-
-```bash
-python generate_forecast.py --target-date 2025-12-01 --output forecast_dec.xlsx
+# 특정 날짜 지정
+python generate_forecast.py --target-date 2025-12-01
 ```
 
 ### **방법 2: Web UI (가장 쉬움)**
-
-#### **Web 앱 실행:**
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-브라우저가 자동으로 열립니다 (또는 `http://localhost:8501` 접속)
+브라우저에서 `http://localhost:8501` 접속 → 날짜 선택 → 예측 생성 → Excel 다운로드
 
-#### **사용 방법:**
+### **Excel 출력**
 
-1. 📅 **날짜 선택**: 사이드바에서 예측할 월 선택
-2. 🔘 **예측 생성 버튼** 클릭
-3. ⏳ **진행 상황** 확인 (3단계)
-   - Step 1: ABC 분류
-   - Step 2: AI 예측 생성
-   - Step 3: Excel 파일 생성
-4. 📊 **결과 확인**:
-   - 요약 통계 (카드)
-   - 차트 (원형, 막대)
-   - 데이터 미리보기 (탭)
-5. 📥 **Excel 다운로드** 버튼 클릭
+생성된 Excel 파일은 **5개 시트**로 구성됩니다:
+- 🟢 **AUTO_자동발주**: B+C 제품 (바로 발주)
+- 🟡 **REVIEW_검토필요**: 이상 징후 감지
+- 🔴 **MANUAL_수동발주**: A-Items (수동 관리)
 
-### **방법 3: Python 스크립트 (프로그래밍)**
-
-```python
-from src.prediction import SalesPredictor
-from src.abc_classifier import ABCClassifier
-from src.excel_exporter import export_predictions_to_excel
-import pandas as pd
-
-# 1. 데이터 로드
-predictor = SalesPredictor()
-historical_df = predictor.load_historical_data()
-
-# 2. ABC 분류
-classifier = ABCClassifier()
-abc_df = classifier.classify(historical_df, lookback_months=6)
-
-# 3. 예측 Feature 준비
-target_date = '2025-12-01'
-features_df, metadata_df = predictor.prepare_features_for_prediction(
-    historical_df, target_date
-)
-
-# 4. ABC 전략 적용 예측
-predictions_df = predictor.predict_with_strategy(features_df, abc_df)
-
-# 5. Excel 출력
-output_path = export_predictions_to_excel(
-    predictions_df,
-    output_file='my_forecast.xlsx',
-    target_date=target_date
-)
-
-print(f"✅ 예측 완료: {output_path}")
-```
-
-### **Excel 출력 파일 구조**
-
-생성된 Excel 파일은 **5개 시트**로 구성:
-
-| 시트 이름 | 색상 | 내용 | 사용법 |
-|-----------|------|------|--------|
-| **요약_Summary** | - | 전체 통계 및 사용 설명 | 먼저 읽기 |
-| **AUTO_자동발주** | 🟢 녹색 | B+C 제품 자동 예측 | 바로 발주 진행 |
-| **REVIEW_검토필요** | 🟡 노랑 | 이상 징후 감지된 제품 | 예측값 참고하여 검토 |
-| **MANUAL_수동발주** | 🔴 빨강 | A-Items (고가치 제품) | 수동으로 예측 및 발주 |
-| **ALL_전체데이터** | - | 모든 SKU 통합 데이터 | 분석 및 참고용 |
-
-**Excel 파일 열 설명:**
-- **SKU**: 제품 코드
-- **ABC_Category**: A/B/C 분류
-- **평균판매량_6개월**: 최근 6개월 평균
-- **AI예측판매량**: AI가 예측한 다음 달 판매량
-- **권장발주량**: 2배 안전재고 포함 (C-Items는 1.2배)
-- **권장사항**: AUTO / MANUAL_REVIEW / MANUAL
-- **신뢰도**: 0~1 (높을수록 신뢰)
-- **이상징후점수**: 0~1 (높을수록 주의 필요)
+**📘 상세 사용법:** [USER_GUIDE.md](USER_GUIDE.md)
 
 ---
 
 ## 📅 월간 업데이트
 
-매월 새로운 판매 데이터가 나오면 다음 절차를 따르세요:
-
-### **Step 1: 새 데이터 업로드**
+매월 새 데이터 업데이트 프로세스 (약 2~3분):
 
 ```bash
-# 1. 새 월간 판매 데이터 업로드
+# 1. 새 데이터 업로드
 cp /path/to/2025.09_BBG.csv data/raw_sales/
-
-# 2. 최신 PO 데이터 업로드 (누적 데이터)
 cp /path/to/updated_sps_data.csv data/raw_po/sps_data.csv
-```
 
-### **Step 2: 데이터 파이프라인 실행**
-
-```bash
+# 2. 파이프라인 실행
 cd src
 python data_pipeline.py
-```
-
-이 명령은:
-- 새 데이터 통합
-- Feature 생성
-- `data/processed/df_for_modeling.csv` 업데이트
-
-### **Step 3: ABC 재분류**
-
-```bash
 python abc_classifier.py
-```
 
-최근 6개월 판매 실적 기반으로 ABC 재분류 (C→B, B→A 변화 감지)
-
-### **Step 4: 다음 달 예측 생성**
-
-```bash
+# 3. 예측 생성
 python ../generate_forecast.py --auto
 ```
 
-또는 Streamlit:
-```bash
-streamlit run ../streamlit_app.py
-```
-
-**전체 과정 소요 시간:** 약 2~3분
-
-**자세한 가이드:** [MONTHLY_UPDATE_GUIDE.md](MONTHLY_UPDATE_GUIDE.md)
+**📘 상세 가이드:** [MONTHLY_UPDATE_GUIDE.md](MONTHLY_UPDATE_GUIDE.md) - 단계별 설명, ABC 재분류, 성능 모니터링
 
 ---
 
@@ -344,33 +238,14 @@ cd src
 python retrain_model.py
 ```
 
-**재학습 프로세스:**
-1. 최신 데이터로 LightGBM, XGBoost 재학습
-2. 이전 모델 자동 백업
-3. 성능 비교 (Old vs New MAE)
-4. 새 모델로 교체
-5. Ensemble 가중치 업데이트
+스크립트가 자동으로:
+- LightGBM, XGBoost 재학습
+- 이전 모델 백업
+- 성능 비교 및 새 Ensemble 가중치 계산
 
-**출력 예시:**
-```
-======================================================================
-📈 PERFORMANCE COMPARISON
-======================================================================
+재학습 후 `config.yaml`의 ensemble weights를 업데이트하세요.
 
-Model                    Old MAE      New MAE  Improvement
-----------------------------------------------------------------------
-LightGBM                   40.81        33.21        7.60
-XGBoost                    35.79        30.12        5.67
-----------------------------------------------------------------------
-
-Ensemble Weights:
-  Old: LightGBM 0.485, XGBoost 0.515
-  New: LightGBM 0.476, XGBoost 0.524
-```
-
-재학습 후 `config.yaml`의 ensemble weights를 출력값으로 업데이트하세요.
-
-**자세한 가이드:** [RETRAIN_GUIDE.md](RETRAIN_GUIDE.md)
+**📘 상세 가이드:** [MONTHLY_UPDATE_GUIDE.md](MONTHLY_UPDATE_GUIDE.md#모델-재학습) - 재학습 시기, 출력 해석, 롤백 방법
 
 ---
 
@@ -426,9 +301,8 @@ AI가 자동으로 이상 패턴을 감지:
 Sales-Data-Prediction/
 │
 ├── 📄 README.md                          ← 이 문서
-├── 📄 MONTHLY_UPDATE_GUIDE.md            ← 월간 업데이트 가이드
+├── 📄 MONTHLY_UPDATE_GUIDE.md            ← 월간 업데이트 + 재학습 가이드
 ├── 📄 USER_GUIDE.md                      ← 사용자 매뉴얼
-├── 📄 RETRAIN_GUIDE.md                   ← 재학습 가이드
 ├── 📄 IMPROVEMENTS.md                    ← Gemini 대비 개선사항
 │
 ├── ⚙️  config.yaml                       ← 설정 파일
@@ -478,8 +352,7 @@ Sales-Data-Prediction/
 |------|------|------|
 | **README.md** | Setup 및 빠른 시작 | 처음 사용자 |
 | **USER_GUIDE.md** | Excel 사용법, 컬럼 설명 | 일반 사용자 |
-| **MONTHLY_UPDATE_GUIDE.md** | 월간 데이터 업데이트 절차 | 관리자 |
-| **RETRAIN_GUIDE.md** | 모델 재학습 방법 | 기술 담당자 |
+| **MONTHLY_UPDATE_GUIDE.md** | 월간 업데이트 + 모델 재학습 | 관리자/기술 담당자 |
 | **IMPROVEMENTS.md** | Gemini 대비 개선사항 | 개발자 |
 
 ---
