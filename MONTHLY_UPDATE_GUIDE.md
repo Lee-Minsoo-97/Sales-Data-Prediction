@@ -223,6 +223,190 @@ if mae_trend > 5:
 
 ---
 
+## 🔄 모델 재학습 (분기별 또는 필요 시)
+
+### **언제 재학습해야 하나?**
+
+| 주기 | 조건 | 이유 |
+|------|------|------|
+| **분기마다 (3개월)** | 권장 | 계절성 변화, 트렌드 반영 |
+| **성능 저하 시** | MAE 3개월 연속 상승<br>Bias > ±50 | 모델 drift 방지 |
+| **데이터 패턴 변화** | 신규 A-Item 5개 이상<br>ABC 대폭 재편 | 새로운 패턴 학습 |
+
+### **재학습 프로세스:**
+
+#### **Step 1: 최신 데이터 준비**
+```bash
+# 최신 데이터로 파이프라인 실행 (이미 완료되었다고 가정)
+cd src
+python data_pipeline.py
+```
+
+#### **Step 2: 재학습 실행**
+```bash
+# 재학습 스크립트 실행
+python retrain_model.py
+```
+
+**인터랙티브 확인:**
+```
+iHerb Sales Prediction - Model Retraining
+======================================================================
+
+This will:
+  1. Retrain LightGBM and XGBoost with latest data
+  2. Backup current models
+  3. Replace models with new versions
+  4. Provide performance comparison
+
+Proceed with retraining? (yes/no): yes
+```
+
+**출력 예시:**
+```
+======================================================================
+🔄 STARTING MODEL RETRAINING
+======================================================================
+
+📂 Loaded 4,645 records for retraining
+📅 Date range: 2024-05-01 ~ 2025-08-01
+🏷️  Unique SKUs: 535
+
+📊 Preparing train/test split (last 2 months for testing)...
+   Train: 3,892 rows (2024-05-01 ~ 2025-06-01)
+   Test:  753 rows (2025-07-01 ~ 2025-08-01)
+   Features: 32 columns
+
+🚀 Training LightGBM...
+[LightGBM] [Info] Auto-choosing row-wise multi-threading...
+[100] valid_0's l1: 35.4821
+[200] valid_0's l1: 33.2156
+   ✅ LightGBM Performance:
+      MAE:  33.21
+      RMSE: 78.45
+      MAPE: 42.18%
+      R²:   0.7234
+
+🚀 Training XGBoost...
+[100] validation_0-mae:31.85432
+[200] validation_0-mae:30.12341
+   ✅ XGBoost Performance:
+      MAE:  30.12
+      RMSE: 72.33
+      MAPE: 38.92%
+      R²:   0.7556
+
+📊 Comparing with old models...
+
+======================================================================
+📈 PERFORMANCE COMPARISON
+======================================================================
+
+Model                    Old MAE      New MAE  Improvement
+----------------------------------------------------------------------
+LightGBM                   40.81        33.21        7.60
+XGBoost                    35.79        30.12        5.67
+----------------------------------------------------------------------
+
+Ensemble Weights:
+  Old: LightGBM 0.485, XGBoost 0.515
+  New: LightGBM 0.476, XGBoost 0.524
+
+📦 Backing up old models...
+   📦 Backed up LightGBM → lgbm_model_v1.2_backup_20251027_093045.pkl
+   📦 Backed up XGBoost → xgb_model_v2_0_backup_20251027_093045.pkl
+
+💾 Models saved:
+   ✅ lgbm_model_retrained_20251027.pkl
+   ✅ xgb_model_retrained_20251027.pkl
+   ✅ lgbm_model_v1.2.pkl (current)
+   ✅ xgb_model_v2_0.pkl (current)
+
+======================================================================
+📋 NEXT STEPS
+======================================================================
+
+1️⃣  Update config.yaml ensemble weights:
+   ensemble:
+     weights:
+       lightgbm: 0.476
+       xgboost: 0.524
+
+2️⃣  Test new models:
+   python generate_forecast.py --auto
+
+3️⃣  Compare predictions with old models before deploying
+
+======================================================================
+✅ RETRAINING COMPLETE!
+======================================================================
+```
+
+#### **Step 3: 설정 업데이트**
+
+`config.yaml` 파일 수정:
+```yaml
+# Ensemble Configuration
+ensemble:
+  # 재학습 후 새로운 가중치로 업데이트
+  weights:
+    lightgbm: 0.476  # 이전: 0.485
+    xgboost: 0.524   # 이전: 0.515
+```
+
+#### **Step 4: 새 모델 테스트**
+```bash
+# 다음 달 예측 생성
+python generate_forecast.py --auto
+```
+
+**Excel 파일 확인:**
+- 예측값이 합리적인지 확인
+- 이전 예측과 큰 차이가 없는지 검토
+- 몇 개 SKU를 샘플로 검증
+
+#### **Step 5: 실제 배포 (선택)**
+```bash
+# Git에 커밋 (선택사항)
+git add models/trained/*.pkl config.yaml
+git commit -m "Retrain models with data up to 2025-08"
+git push
+```
+
+---
+
+### **재학습 시 주의사항:**
+
+⚠️ **백업 확인:**
+- 재학습 전 자동으로 이전 모델 백업됨
+- `models/trained/*_backup_*.pkl` 파일 확인
+
+⚠️ **성능 비교:**
+- 새 모델이 이전보다 **나쁘면** 재학습 원인 분석 필요
+- 데이터 품질 문제일 수 있음
+
+⚠️ **점진적 배포:**
+- 재학습 후 즉시 전체 배포하지 말고
+- 1~2주 테스트 기간 거쳐서 안정성 확인
+
+---
+
+### **재학습 롤백 (문제 발생 시):**
+
+```bash
+# 백업 파일 확인
+ls -lh models/trained/*backup*
+
+# 최신 백업으로 복구
+cd models/trained
+cp lgbm_model_v1.2_backup_20251027_093045.pkl lgbm_model_v1.2.pkl
+cp xgb_model_v2_0_backup_20251027_093045.pkl xgb_model_v2_0.pkl
+
+# config.yaml도 이전 가중치로 되돌리기
+```
+
+---
+
 ## 🔧 트러블슈팅
 
 ### **문제 1: 새 Sales 파일이 컬럼 형식이 다름**
